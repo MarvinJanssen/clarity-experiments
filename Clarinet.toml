@@ -1,0 +1,51 @@
+[project]
+name = "Clarity Experiments"
+requirements = []
+
+[contracts.bogus-ft]
+path = "contracts/test/bogus-ft.clar"
+depends_on = ["sip010-ft-trait"]
+
+[contracts.bogus-nft]
+path = "contracts/test/bogus-nft.clar"
+depends_on = ["sip009-nft-trait"]
+
+[contracts.counter]
+path = "contracts/counter.clar"
+depends_on = []
+
+[contracts.counter-multi-user]
+path = "contracts/counter-multi-user.clar"
+depends_on = []
+
+[contracts.multisig-vault]
+path = "contracts/multisig-vault.clar"
+depends_on = []
+
+[contracts.sip009-nft]
+path = "contracts/sip009-nft.clar"
+depends_on = ["sip009-nft-trait"]
+
+[contracts.sip009-nft-trait]
+path = "contracts/sips/sip009-nft-trait.clar"
+depends_on = []
+
+[contracts.sip010-ft-trait]
+path = "contracts/sips/sip010-ft-trait.clar"
+depends_on = []
+
+[contracts.sip010-token]
+path = "contracts/sip010-token.clar"
+depends_on = []
+
+[contracts.timelocked-wallet]
+path = "contracts/timelocked-wallet.clar"
+depends_on = []
+
+[contracts.timelocked-wallet-simplified]
+path = "contracts/timelocked-wallet-simplified.clar"
+depends_on = []
+
+[contracts.tiny-market]
+path = "contracts/tiny-market.clar"
+depends_on = ["sip009-nft-trait", "sip010-ft-trait"]
