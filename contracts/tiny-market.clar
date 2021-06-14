@@ -23,8 +23,18 @@
 (define-constant err-maker-taker-equal (err u2005))
 (define-constant err-unintended-taker (err u2006))
 
-
-(define-map listings {id: uint} {maker: principal, taker: (optional principal), token-id: uint, nft-asset-contract: principal, expiry: uint, price: uint, payment-asset-contract: (optional principal)})
+(define-map listings
+	{id: uint}
+	{
+		maker: principal,
+		taker: (optional principal),
+		token-id: uint,
+		nft-asset-contract: principal,
+		expiry: uint,
+		price: uint,
+		payment-asset-contract: (optional principal)
+	}
+)
 
 (define-data-var listing-nonce uint u0)
 
