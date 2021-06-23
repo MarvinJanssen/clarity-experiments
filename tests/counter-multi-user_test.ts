@@ -1,4 +1,4 @@
-import { Clarinet, Tx, Chain, Account } from 'https://deno.land/x/clarinet@v0.10.0/index.ts';
+import { Clarinet, Tx, Chain, Account } from 'https://deno.land/x/clarinet@v0.13.0/index.ts';
 
 Clarinet.test({
 	name: "Anyone can count up their counter",
