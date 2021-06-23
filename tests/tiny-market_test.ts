@@ -1,4 +1,4 @@
-import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarinet@v0.10.0/index.ts';
+import { Clarinet, Tx, Chain, Account, types } from 'https://deno.land/x/clarinet@v0.13.0/index.ts';
 import { assertEquals } from 'https://deno.land/std@0.90.0/testing/asserts.ts';
 
 const contractName = 'tiny-market';
@@ -17,7 +17,7 @@ function mintNft({ chain, deployer, recipient, nftAssetContract = defaultNftAsse
 	block.receipts[0].result.expectOk();
 	const nftMintEvent = block.receipts[0].events[0].nft_mint_event;
 	const [nftAssetContractPrincipal, nftAssetId] = nftMintEvent.asset_identifier.split('::');
-	return { nftAssetContract: nftAssetContractPrincipal, nftAssetId, tokenId: nftMintEvent.value.UInt, block };
+	return { nftAssetContract: nftAssetContractPrincipal, nftAssetId, tokenId: nftMintEvent.value, block };
 }
 
 function mintFt({ chain, deployer, amount, recipient, paymentAssetContract = defaultPaymentAssetContract }: { chain: Chain, deployer: Account, amount: number, recipient: Account, paymentAssetContract?: string }) {
@@ -36,7 +36,7 @@ interface Sip009NftTransferEvent {
 		asset_identifier: string,
 		sender: string,
 		recipient: string,
-		value: { UInt: number }
+		value: string
 	}
 }
 
@@ -44,9 +44,9 @@ function assertNftTransfer(event: Sip009NftTransferEvent, nftAssetContract: stri
 	assertEquals(typeof event, 'object');
 	assertEquals(event.type, 'nft_transfer_event');
 	assertEquals(event.nft_transfer_event.asset_identifier.substr(0, nftAssetContract.length), nftAssetContract);
-	assertEquals(event.nft_transfer_event.sender, sender);
-	assertEquals(event.nft_transfer_event.recipient, recipient);
-	assertEquals(event.nft_transfer_event.value.UInt, tokenId);
+	event.nft_transfer_event.sender.expectPrincipal(sender);
+	event.nft_transfer_event.recipient.expectPrincipal(recipient);
+	event.nft_transfer_event.value.expectUint(tokenId);
 }
 
 interface Order {
@@ -74,12 +74,13 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
 		]);
 		block.receipts[0].result.expectOk().expectUint(0);
-		assertNftTransfer(block.receipts[0].events[0], nftAssetContract, tokenId, maker.address, contractPrincipal(deployer));
+		assertNftTransfer(block.receipts[0].events[0], nftAssetContract, expectedTokenId, maker.address, contractPrincipal(deployer));
 	}
 });
 
@@ -89,12 +90,13 @@ Clarinet.test({
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract } = mintFt({ chain, deployer, recipient: maker, amount: 1 });
-		const order: Order = { tokenId, expiry: 10, price: 10, paymentAssetContract };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10, paymentAssetContract };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
 		]);
 		block.receipts[0].result.expectOk().expectUint(0);
-		assertNftTransfer(block.receipts[0].events[0], nftAssetContract, tokenId, maker.address, contractPrincipal(deployer));
+		assertNftTransfer(block.receipts[0].events[0], nftAssetContract, expectedTokenId, maker.address, contractPrincipal(deployer));
 	}
 });
 
@@ -104,7 +106,7 @@ Clarinet.test({
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const expiry = 10;
-		const order: Order = { tokenId, expiry, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry, price: 10 };
 		chain.mineEmptyBlockUntil(expiry + 1);
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
@@ -119,7 +121,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 0 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
 		]);
@@ -133,7 +135,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: taker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
 		]);
@@ -147,13 +149,14 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'cancel-listing', [types.uint(0), types.principal(nftAssetContract)], maker.address)
 		]);
 		block.receipts[1].result.expectOk().expectBool(true);
-		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, tokenId, contractPrincipal(deployer), maker.address);
+		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, expectedTokenId, contractPrincipal(deployer), maker.address);
 	}
 });
 
@@ -162,7 +165,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, otherAccount] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'cancel-listing', [types.uint(0), types.principal(nftAssetContract)], otherAccount.address)
@@ -177,7 +180,8 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order)
 		]);
@@ -191,7 +195,7 @@ Clarinet.test({
 		listing['price'].expectUint(order.price);
 		listing['taker'].expectNone();
 		listing['nft-asset-contract'].expectPrincipal(nftAssetContract);
-		listing['token-id'].expectUint(tokenId);
+		listing['token-id'].expectUint(expectedTokenId);
 	}
 });
 
@@ -200,7 +204,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'cancel-listing', [types.uint(0), types.principal(nftAssetContract)], maker.address)
@@ -215,13 +219,14 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], taker.address)
 		]);
 		block.receipts[1].result.expectOk().expectUint(0);
-		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, tokenId, contractPrincipal(deployer), taker.address);
+		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, expectedTokenId, contractPrincipal(deployer), taker.address);
 		block.receipts[1].events.expectSTXTransferEvent(order.price, taker.address, maker.address);
 	}
 });
@@ -233,13 +238,14 @@ Clarinet.test({
 		const price = 50;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract, paymentAssetId } = mintFt({ chain, deployer, recipient: taker, amount: price });
-		const order: Order = { tokenId, expiry: 10, price, paymentAssetContract };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-ft', [types.uint(0), types.principal(nftAssetContract), types.principal(paymentAssetContract)], taker.address)
 		]);
 		block.receipts[1].result.expectOk().expectUint(0);
-		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, tokenId, contractPrincipal(deployer), taker.address);
+		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, expectedTokenId, contractPrincipal(deployer), taker.address);
 		block.receipts[1].events.expectFungibleTokenTransferEvent(price, taker.address, maker.address, paymentAssetId);
 	}
 });
@@ -249,7 +255,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker] = ['deployer', 'wallet_1'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], maker.address)
@@ -278,7 +284,7 @@ Clarinet.test({
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const expiry = 10;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry, price: 10 };
 		chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 		]);
@@ -297,7 +303,7 @@ Clarinet.test({
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const expiry = 10;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry, price: 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10 };
 		const bogusNftAssetContract = `${deployer.address}.bogus-nft`;
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
@@ -315,7 +321,7 @@ Clarinet.test({
 		const price = 50;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract } = mintFt({ chain, deployer, recipient: taker, amount: price });
-		const order: Order = { tokenId, expiry: 10, price };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-ft', [types.uint(0), types.principal(nftAssetContract), types.principal(paymentAssetContract)], taker.address)
@@ -332,7 +338,7 @@ Clarinet.test({
 		const price = 50;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract } = mintFt({ chain, deployer, recipient: taker, amount: price });
-		const order: Order = { tokenId, expiry: 10, price, paymentAssetContract };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price, paymentAssetContract };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], taker.address)
@@ -350,7 +356,7 @@ Clarinet.test({
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract } = mintFt({ chain, deployer, recipient: taker, amount: price });
 		const bogusPaymentAssetContract = `${deployer.address}.bogus-ft`;
-		const order: Order = { tokenId, expiry: 10, price, paymentAssetContract };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price, paymentAssetContract };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-ft', [types.uint(0), types.principal(nftAssetContract), types.principal(bogusPaymentAssetContract)], taker.address)
@@ -365,7 +371,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: taker.balance + 10 };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: taker.balance + 10 };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], taker.address)
@@ -382,7 +388,7 @@ Clarinet.test({
 		const price = 50;
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
 		const { paymentAssetContract } = mintFt({ chain, deployer, recipient: taker, amount: price });
-		const order: Order = { tokenId, expiry: 10, price: taker.balance + 10, paymentAssetContract };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: taker.balance + 10, paymentAssetContract };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-ft', [types.uint(0), types.principal(nftAssetContract), types.principal(paymentAssetContract)], taker.address)
@@ -397,13 +403,14 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, taker] = ['deployer', 'wallet_1', 'wallet_2'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10, taker: taker.address };
+		let expectedTokenId = tokenId.expectUint(1);
+		const order: Order = { tokenId: expectedTokenId, expiry: 10, price: 10, taker: taker.address };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], taker.address)
 		]);
 		block.receipts[1].result.expectOk().expectUint(0);
-		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, tokenId, contractPrincipal(deployer), taker.address);
+		assertNftTransfer(block.receipts[1].events[0], nftAssetContract, expectedTokenId, contractPrincipal(deployer), taker.address);
 		block.receipts[1].events.expectSTXTransferEvent(order.price, taker.address, maker.address);
 	}
 });
@@ -413,7 +420,7 @@ Clarinet.test({
 	async fn(chain: Chain, accounts: Map<string, Account>) {
 		const [deployer, maker, taker, unintendedTaker] = ['deployer', 'wallet_1', 'wallet_2', 'wallet_3'].map(name => accounts.get(name)!);
 		const { nftAssetContract, tokenId } = mintNft({ chain, deployer, recipient: maker });
-		const order: Order = { tokenId, expiry: 10, price: 10, taker: taker.address };
+		const order: Order = { tokenId: tokenId.expectUint(1), expiry: 10, price: 10, taker: taker.address };
 		const block = chain.mineBlock([
 			listOrderTx(nftAssetContract, maker, order),
 			Tx.contractCall(contractName, 'fulfill-listing-stx', [types.uint(0), types.principal(nftAssetContract)], unintendedTaker.address)
@@ -438,7 +445,7 @@ Clarinet.test({
 
 		// Mint an NFT for all makers and generate orders.
 		const nfts = makers.map(recipient => mintNft({ chain, deployer, recipient }));
-		const orders: Order[] = makers.map((maker, i) => ({ tokenId: nfts[i].tokenId, expiry, price: 1 + ~~(Math.random() * 10) }));
+		const orders: Order[] = makers.map((maker, i) => ({ tokenId: nfts[i].tokenId.expectUint(i), expiry, price: 1 + ~~(Math.random() * 10) }));
 
 		// List all NFTs.
 		const block = chain.mineBlock(
